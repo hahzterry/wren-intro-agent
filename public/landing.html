@@ -1,0 +1,757 @@
+
+
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+  <meta charset="UTF-8" />
+
+  <meta name="viewport"
+
+        content="width=device-width, initial-scale=1" />
+
+  <meta name="theme-color" content="#101114" />
+
+  <meta name="description"
+
+        content="WarehouseJobz AI connects warehouse workers with hiring employers through simple text conversations." />
+
+  <title>WarehouseJobz AI | Your Next Job Starts With a Text</title>
+
+  <style>
+
+    :root {
+
+      --bg: #101114;
+
+      --surface: #1b1d21;
+
+      --lime: #b9ff36;
+
+      --white: #ffffff;
+
+      --muted: #b5b8be;
+
+      --border: #303239;
+
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+
+      margin: 0;
+
+      background: var(--bg);
+
+      color: var(--white);
+
+      font-family: Inter, system-ui, -apple-system,
+
+                   BlinkMacSystemFont, "Segoe UI", sans-serif;
+
+      -webkit-font-smoothing: antialiased;
+
+    }
+
+    a { color: inherit; text-decoration: none; }
+
+    .container {
+
+      width: min(100% - 36px, 1080px);
+
+      margin: 0 auto;
+
+    }
+
+    header {
+
+      padding: 23px 0;
+
+      border-bottom: 1px solid var(--border);
+
+    }
+
+    .header-inner {
+
+      display: flex;
+
+      align-items: center;
+
+      justify-content: space-between;
+
+      gap: 12px;
+
+    }
+
+    .logo {
+
+      font-size: clamp(19px, 4.7vw, 27px);
+
+      font-weight: 950;
+
+      letter-spacing: -1.3px;
+
+    }
+
+    .logo span { color: var(--lime); }
+
+    .ai-tag {
+
+      color: var(--lime);
+
+      font-size: 11px;
+
+      font-weight: 800;
+
+      border: 1px solid #5c8025;
+
+      border-radius: 30px;
+
+      padding: 7px 10px;
+
+      white-space: nowrap;
+
+    }
+
+    main { padding: 65px 0 55px; }
+
+    .hero {
+
+      max-width: 780px;
+
+      margin: auto;
+
+      text-align: center;
+
+    }
+
+    .eyebrow {
+
+      color: var(--lime);
+
+      font-size: 12px;
+
+      font-weight: 850;
+
+      letter-spacing: 2px;
+
+      text-transform: uppercase;
+
+    }
+
+    h1 {
+
+      margin: 22px auto;
+
+      font-size: clamp(43px, 8vw, 86px);
+
+      font-weight: 950;
+
+      letter-spacing: -3px;
+
+      line-height: 1.02;
+
+    }
+
+    h1 span { color: var(--lime); }
+
+    .subtitle {
+
+      color: var(--muted);
+
+      font-size: clamp(16px, 3.5vw, 20px);
+
+      line-height: 1.65;
+
+      max-width: 590px;
+
+      margin: 0 auto 32px;
+
+    }
+
+    .primary-button {
+
+      display: flex;
+
+      align-items: center;
+
+      justify-content: center;
+
+      width: min(100%, 420px);
+
+      min-height: 66px;
+
+      margin: 0 auto;
+
+      padding: 17px 24px;
+
+      background: var(--lime);
+
+      color: #111;
+
+      border-radius: 16px;
+
+      font-size: 18px;
+
+      font-weight: 900;
+
+      transition: transform .2s, background .2s;
+
+    }
+
+    .primary-button:hover {
+
+      transform: translateY(-2px);
+
+      background: #cbff68;
+
+    }
+
+    .secondary-note {
+
+      margin-top: 13px;
+
+      color: #8f9299;
+
+      font-size: 13px;
+
+    }
+
+    .qr-section {
+
+      display: grid;
+
+      grid-template-columns: 1fr 1fr;
+
+      align-items: center;
+
+      gap: 34px;
+
+      max-width: 760px;
+
+      margin: 64px auto 0;
+
+      padding: 28px;
+
+      background: var(--surface);
+
+      border: 1px solid var(--border);
+
+      border-radius: 24px;
+
+    }
+
+    .qr-box {
+
+      padding: 19px;
+
+      background: white;
+
+      border-radius: 17px;
+
+      text-align: center;
+
+    }
+
+    .qr-box img {
+
+      display: block;
+
+      width: 100%;
+
+      max-width: 230px;
+
+      margin: auto;
+
+      aspect-ratio: 1;
+
+    }
+
+    .qr-copy h2 {
+
+      font-size: 30px;
+
+      letter-spacing: -1px;
+
+      margin: 0 0 12px;
+
+    }
+
+    .qr-copy p {
+
+      color: var(--muted);
+
+      line-height: 1.65;
+
+      margin-bottom: 20px;
+
+    }
+
+    .phone {
+
+      display: block;
+
+      color: var(--lime);
+
+      font-size: clamp(22px, 4vw, 29px);
+
+      font-weight: 900;
+
+      white-space: nowrap;
+
+    }
+
+    .steps {
+
+      display: grid;
+
+      grid-template-columns: repeat(3, 1fr);
+
+      gap: 18px;
+
+      margin: 85px auto 0;
+
+    }
+
+    .step {
+
+      padding: 25px;
+
+      background: var(--surface);
+
+      border: 1px solid var(--border);
+
+      border-radius: 20px;
+
+    }
+
+    .step-number {
+
+      color: var(--lime);
+
+      font-weight: 900;
+
+      font-size: 14px;
+
+    }
+
+    .step h3 {
+
+      margin: 15px 0 10px;
+
+      font-size: 20px;
+
+    }
+
+    .step p {
+
+      color: var(--muted);
+
+      line-height: 1.6;
+
+      margin: 0;
+
+      font-size: 14px;
+
+    }
+
+    .employer {
+
+      margin: 65px auto 0;
+
+      padding: 40px 25px;
+
+      text-align: center;
+
+      background: #20251b;
+
+      border: 1px solid #4b6330;
+
+      border-radius: 24px;
+
+    }
+
+    .employer h2 {
+
+      font-size: clamp(27px, 5vw, 42px);
+
+      margin: 0 0 12px;
+
+    }
+
+    .employer p {
+
+      max-width: 530px;
+
+      margin: 0 auto 23px;
+
+      color: #c6ccbd;
+
+      line-height: 1.6;
+
+    }
+
+    .employer a {
+
+      display: inline-block;
+
+      padding: 16px 25px;
+
+      border: 1px solid var(--lime);
+
+      border-radius: 12px;
+
+      color: var(--lime);
+
+      font-weight: 850;
+
+    }
+
+    .testing {
+
+      max-width: 760px;
+
+      margin: 35px auto 0;
+
+      padding: 16px;
+
+      color: #b9bbc0;
+
+      border: 1px solid var(--border);
+
+      border-radius: 12px;
+
+      font-size: 13px;
+
+      line-height: 1.6;
+
+      text-align: center;
+
+    }
+
+    footer {
+
+      border-top: 1px solid var(--border);
+
+      padding: 27px 0;
+
+      text-align: center;
+
+      color: #92959c;
+
+      font-size: 12px;
+
+    }
+
+    @media (max-width: 640px) {
+
+      main { padding-top: 48px; }
+
+      h1 { letter-spacing: -2px; }
+
+      .qr-section {
+
+        grid-template-columns: 1fr;
+
+        gap: 23px;
+
+        padding: 23px;
+
+      }
+
+      .qr-box {
+
+        max-width: 270px;
+
+        width: 100%;
+
+        margin: auto;
+
+      }
+
+      .qr-copy { text-align: center; }
+
+      .steps { grid-template-columns: 1fr; margin-top: 55px; }
+
+      .employer { margin-top: 45px; }
+
+    }
+
+  </style>
+
+</head>
+
+<body>
+
+  <header>
+
+    <div class="container header-inner">
+
+      <a href="/" class="logo" aria-label="WarehouseJobz AI home">
+
+        WAREHOUSE<span>JOBZ</span>
+
+      </a>
+
+      <div class="ai-tag">AI RECRUITING</div>
+
+    </div>
+
+  </header>
+
+  <main class="container">
+
+    <section class="hero">
+
+      <div class="eyebrow">Warehouse Jobs. Made Simple.</div>
+
+      <h1>
+
+        YOUR NEXT<br />
+
+        WAREHOUSE JOB<br />
+
+        <span>STARTS WITH A TEXT.</span>
+
+      </h1>
+
+      <p class="subtitle">
+
+        No long applications to get started.
+
+        Text our AI recruiter about your warehouse
+
+        experience, preferred shift, location and pay.
+
+      </p>
+
+      <a id="workerText" class="primary-button"
+
+         href="sms:+14155952354">
+
+        TEXT FOR WAREHOUSE JOBS
+
+      </a>
+
+      <p class="secondary-note">
+
+        Free to start a conversation. No account required.
+
+      </p>
+
+    </section>
+
+    <section class="qr-section" id="scan">
+
+      <div class="qr-box">
+
+        <img
+
+          id="qrCode"
+
+          alt="QR code to start a text with WarehouseJobz AI"
+
+          width="230"
+
+          height="230"
+
+        />
+
+      </div>
+
+      <div class="qr-copy">
+
+        <h2>SCAN. TEXT. GET STARTED.</h2>
+
+        <p>
+
+          Scan the code with your phone camera
+
+          to open a message to WarehouseJobz AI.
+
+          Our recruiter will guide you through
+
+          the next steps when the service is active.
+
+        </p>
+
+        <a id="phoneLink" class="phone"
+
+           href="sms:+14155952354">
+
+          (415) 595-2354
+
+        </a>
+
+      </div>
+
+    </section>
+
+    <section class="steps" aria-label="How it works">
+
+      <div class="step">
+
+        <div class="step-number">01 / TEXT</div>
+
+        <h3>Start a conversation</h3>
+
+        <p>
+
+          Tell WarehouseJobz AI what type of
+
+          warehouse work you're looking for.
+
+        </p>
+
+      </div>
+
+      <div class="step">
+
+        <div class="step-number">02 / QUALIFY</div>
+
+        <h3>Share your experience</h3>
+
+        <p>
+
+          Discuss forklift skills, shifts,
+
+          hourly pay and availability.
+
+        </p>
+
+      </div>
+
+      <div class="step">
+
+        <div class="step-number">03 / CONNECT</div>
+
+        <h3>Meet hiring employers</h3>
+
+        <p>
+
+          When a suitable opening exists,
+
+          request an introduction with your consent.
+
+        </p>
+
+      </div>
+
+    </section>
+
+    <section class="employer">
+
+      <h2>HIRING WAREHOUSE WORKERS?</h2>
+
+      <p>
+
+        Looking for forklift operators, pickers,
+
+        packers or warehouse associates?
+
+        Start a conversation with WarehouseJobz AI
+
+        about your staffing needs.
+
+      </p>
+
+      <a id="employerText" href="sms:+14155952354">
+
+        TEXT TO RECRUIT WORKERS
+
+      </a>
+
+    </section>
+
+    <div class="testing">
+
+      <strong>Currently in testing.</strong>
+
+      Our Photon iMessage line is shared and
+
+      only accepts messages from approved test users.
+
+      Public messaging and job introductions
+
+      are not yet generally available.
+
+    </div>
+
+  </main>
+
+  <footer>
+
+    <div class="container">
+
+      &copy; <span id="year"></span> WarehouseJobz AI.
+
+      AI-assisted recruiting. Employment is not guaranteed.
+
+    </div>
+
+  </footer>
+
+  <script>
+
+    const NUMBER = "+14155952354";
+
+    function smsLink(message) {
+
+      const isiOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+
+      const separator = isiOS ? "&" : "?";
+
+      return "sms:" + NUMBER + separator +
+
+        "body=" + encodeURIComponent(message);
+
+    }
+
+    const workerMessage =
+
+      "Hi WarehouseJobz AI, I'm looking for a warehouse job.";
+
+    const employerMessage =
+
+      "Hi WarehouseJobz AI, I'm hiring warehouse workers.";
+
+    document.getElementById("workerText").href =
+
+      smsLink(workerMessage);
+
+    document.getElementById("phoneLink").href =
+
+      smsLink(workerMessage);
+
+    document.getElementById("employerText").href =
+
+      smsLink(employerMessage);
+
+    // QR code points to the SMS conversation.
+
+    // Uses a third-party QR generation service.
+
+    const qrTarget = smsLink(workerMessage);
+
+    document.getElementById("qrCode").src =
+
+      "https://api.qrserver.com/v1/create-qr-code/" +
+
+      "?size=460x460&margin=12&data=" +
+
+      encodeURIComponent(qrTarget);
+
+    document.getElementById("year").textContent =
+
+      new Date().getFullYear();
+
+  </script>
+
+</body>
+
+</html>
