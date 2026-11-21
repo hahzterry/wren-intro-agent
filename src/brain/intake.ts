@@ -1,100 +1,661 @@
+
 /**
- * Intake: how Wren gets to know a candidate and a role, like a good agency recruiter, or an anthropologist.
+ * WAREHOUSEJOBZ AI
+ * Warehouse Worker & Employer Intake Engine
  *
- * The method (see docs/intake.md):
- *  1. Take the artifact first (resume / JD), so nobody repeats what's already written down.
- *  2. Then ask for stories, not adjectives. "Walk me through the last time..." beats "are you a self-starter?".
- *  3. Ask about failure and friction on purpose; that's where the real fit signal lives.
- *  4. Mirror each side: what the candidate needs to hear about the role is what we ask the employer, and vice versa.
- *  5. Practical constraints last, once there's trust.
+ * Supports:
+ * - Forklift operators
+ * - Reach truck operators
+ * - Order pickers
+ * - Packers
+ * - Material handlers
+ * - Loaders and unloaders
+ * - Shipping and receiving
+ * - Inventory associates
+ * - Warehouse supervisors
  *
- * EDIT ME: these question banks are meant to be tuned. Each question names the field it fills, so the matching
- * and the intro copy keep working when wording changes. Tests rely on the words "proudest" and "leave".
+ * Designed to work with:
+ * - agent.ts
+ * - llm.ts
+ * - match.ts
+ *
+ * Compatibility:
+ * - Preserves existing exports.
+ * - Preserves question keys used by Agent.
+ * - Keeps legacy parseJD fields so existing callers compile.
+ * - Adds warehouse-specific structured fields.
  */
 
 export interface IntakeQuestion {
   key: string;
   ask: string;
-  /** What we're actually listening for. Shown in docs and given to Claude so follow-ups stay on target. */
   listenFor: string;
 }
 
-/** Candidate side. Wren asks these after reading the resume. */
+export type WarehouseShift =
+  | "first"
+  | "second"
+  | "third"
+  | "weekend"
+  | "flexible";
+
+export type WarehouseEmploymentType =
+  | "full-time"
+  | "part-time"
+  | "temporary"
+  | "direct-hire"
+  | "contract";
+
+export interface ParsedWarehouseResume {
+  title?: string;
+  years?: number;
+  skills?: string[];
+  equipment?: string[];
+  preferredShifts?: WarehouseShift[];
+  desiredHourlyPay?: number;
+  city?: string;
+  state?: string;
+  availableFrom?: string;
+}
+
+export interface ParsedWarehouseJD {
+  roleTitle?: string;
+
+  // Legacy compatibility only.
+  // Warehouse jobs use hourlyPayMin/Max instead.
+  bandK?: [number, number];
+  equity?: string;
+
+  setup?: string;
+
+  hourlyPayMin?: number;
+  hourlyPayMax?: number;
+
+  city?: string;
+  state?: string;
+
+  shift?: WarehouseShift;
+  shiftStart?: string;
+  shiftEnd?: string;
+
+  workersNeeded?: number;
+  startDate?: string;
+
+  requiredSkills?: string[];
+  requiredEquipment?: string[];
+
+  employmentType?: WarehouseEmploymentType;
+}
+
+// --------------------------------------------------
+// WORKER INTERVIEW QUESTIONS
+// --------------------------------------------------
+
 export const CANDIDATE_QUESTIONS: IntakeQuestion[] = [
   {
     key: "proudest",
-    ask: "Walk me through the work you're proudest of from the last couple of years. What was broken before you touched it?",
-    listenFor: "a concrete before/after, their actual role vs. the team's, the scale, and how they talk about other people",
+    ask:
+      "What warehouse jobs have you worked before? " +
+      "Tell me about the work you're proudest of. " +
+      "Have you done picking, packing, forklift, " +
+      "loading, shipping, receiving, or inventory?",
+    listenFor:
+      "Previous warehouse roles, years of experience, " +
+      "specific tasks, equipment experience, and " +
+      "examples of reliable job performance.",
   },
   {
     key: "energy",
-    ask: "What kind of problem makes you lose track of time? And what kind quietly drains you?",
-    listenFor: "the work they'd do unpaid vs. the work that burns them out; this is what 'good at' vs. 'good for' turns on",
+    ask:
+      "What type of warehouse work do you prefer? " +
+      "Forklift, picking, packing, loading, or something else? " +
+      "And which shifts work best for you: " +
+      "first, second, third, overnight, or weekends?",
+    listenFor:
+      "Preferred warehouse role, equipment experience, " +
+      "preferred shifts, schedule limitations, and " +
+      "work preferences.",
   },
   {
     key: "whyLeave",
-    ask: "What would actually make you leave where you are now?",
-    listenFor: "the real push (manager, scope, money, mission, pace), stated plainly; it predicts what will make them stay",
+    ask:
+      "Are you currently working, or looking for a new warehouse job? " +
+      "What would make you leave your current job, " +
+      "and when could you start a new one?",
+    listenFor:
+      "Employment status, reason for seeking a new job, " +
+      "availability, desired working conditions, " +
+      "and potential start date.",
   },
   {
     key: "practical",
-    ask: "Practical stuff, so I never waste your time: lowest base salary you'd take, and remote, hybrid or in office?",
-    listenFor: "pay floor and setup; hard filters, never negotiated by Wren",
+    ask:
+      "Last few details so I can match you with the right warehouse jobs: " +
+      "What's the lowest hourly pay you'd accept, " +
+      "what city or ZIP code do you want to work in, " +
+      "and which shifts can you work?",
+    listenFor:
+      "Minimum hourly pay, preferred work location, " +
+      "commuting preferences, and shift availability. " +
+      "These are matching constraints, not permission " +
+      "to negotiate the worker's pay.",
   },
 ];
 
-/** Hiring side. Wren asks these after reading the JD. */
+// --------------------------------------------------
+// WAREHOUSE EMPLOYER QUESTIONS
+// --------------------------------------------------
+
 export const ROLE_QUESTIONS: IntakeQuestion[] = [
   {
     key: "success",
-    ask: "Picture this person 90 days in, and it went great. What did they ship or change?",
-    listenFor: "the actual outcome, which is usually different from the JD's list of requirements",
+    ask:
+      "What does a successful worker look like in this warehouse role? " +
+      "For example, what tasks should they handle confidently " +
+      "during their first few weeks?",
+    listenFor:
+      "Actual job duties, productivity expectations, " +
+      "equipment responsibilities, training requirements, " +
+      "and realistic performance expectations.",
   },
   {
     key: "antiPattern",
-    ask: "Has someone done this job before, here or anywhere, and it didn't work out? What was missing?",
-    listenFor: "the real must-have, learned the hard way; the line in the JD that actually matters",
+    ask:
+      "What qualifications are absolutely required? " +
+      "For example, forklift experience, reach truck experience, " +
+      "RF scanner knowledge, or previous warehouse work? " +
+      "Which skills can you train someone to do?",
+    listenFor:
+      "Mandatory versus trainable skills, required " +
+      "equipment experience, employer verification needs, " +
+      "and qualifications directly related to the job.",
   },
   {
     key: "pitch",
-    ask: "What's the honest pitch, and the honest catch? Why would someone great take this, and what might scare them off?",
-    listenFor: "what to tell candidates up front; candor here is what makes a warm intro trustworthy",
+    ask:
+      "Why should a warehouse worker choose this job? " +
+      "Tell me about the benefits, overtime opportunities, " +
+      "working conditions, and anything applicants " +
+      "should know before accepting an introduction.",
+    listenFor:
+      "Honest job advantages, benefits, overtime policy, " +
+      "physical job requirements, scheduling expectations, " +
+      "and potential worker concerns.",
   },
   {
     key: "practical",
-    ask: "Last one, the practical stuff: base range, equity, and remote, hybrid or in office?",
-    listenFor: "band, equity and setup; shared with the candidate before anyone meets",
+    ask:
+      "Final details: what's the hourly pay range, " +
+      "warehouse location, shift schedule, " +
+      "number of workers needed, and expected start date?",
+    listenFor:
+      "Hourly wage range, worksite location, " +
+      "shift start/end times, staffing quantity, " +
+      "and target start date.",
   },
 ];
 
-// ---------------------------------------------------------------- parsing the artifacts
+// --------------------------------------------------
+// WAREHOUSE JOB TITLES
+// --------------------------------------------------
 
-/** "Senior PM at Corvid", "6 years" etc. from a pasted resume or LinkedIn summary. Best-effort, rules only. */
-export function parseResume(text: string): { title?: string; years?: number } {
-  const years = text.match(/(\d{1,2})\+?\s*(?:years?|yrs?)\b/i);
-  const titleLine = text.split(/\n|\. /).map((l) => l.trim()).find((l) =>
-    /\b(engineer|developer|designer|product manager|pm|scientist|analyst|recruiter|account executive|founder|lead|head of|director|chief)\b/i.test(l) && l.length < 90);
-  const title = titleLine?.replace(/^[-•*\s]+/, "").replace(/[,;(]?\s*\d{1,2}\+?\s*(years?|yrs?)\b.*$/i, "").trim();
-  return { title: title || undefined, years: years ? Number(years[1]) : undefined };
+const WAREHOUSE_ROLE_PATTERNS: Array<{
+  title: string;
+  pattern: RegExp;
+}> = [
+  {
+    title: "Reach Truck Operator",
+    pattern: /\b(reach truck|reach forklift)\b/i,
+  },
+  {
+    title: "Cherry Picker Operator",
+    pattern: /\b(cherry picker|order picker operator)\b/i,
+  },
+  {
+    title: "Forklift Operator",
+    pattern: /\b(forklift operator|forklift driver|forklift)\b/i,
+  },
+  {
+    title: "Warehouse Supervisor",
+    pattern: /\b(warehouse supervisor|warehouse manager|shift supervisor)\b/i,
+  },
+  {
+    title: "Inventory Associate",
+    pattern: /\b(inventory associate|inventory control|cycle count(?:er)?)\b/i,
+  },
+  {
+    title: "Shipping Associate",
+    pattern: /\b(shipping associate|shipping clerk)\b/i,
+  },
+  {
+    title: "Receiving Associate",
+    pattern: /\b(receiving associate|receiving clerk)\b/i,
+  },
+  {
+    title: "Order Picker",
+    pattern: /\b(order picker|order picking|picker)\b/i,
+  },
+  {
+    title: "Packer",
+    pattern: /\b(packer|packing associate|packaging associate)\b/i,
+  },
+  {
+    title: "Loader",
+    pattern: /\b(loader|loading associate|dock worker)\b/i,
+  },
+  {
+    title: "Unloader",
+    pattern: /\b(unloader|unloading associate)\b/i,
+  },
+  {
+    title: "Material Handler",
+    pattern: /\b(material handler|material handling)\b/i,
+  },
+  {
+    title: "Warehouse Associate",
+    pattern: /\b(warehouse associate|warehouse worker|general warehouse|general labor)\b/i,
+  },
+];
+
+export function extractWarehouseRole(
+  text: string
+): string | undefined {
+  for (const role of WAREHOUSE_ROLE_PATTERNS) {
+    if (role.pattern.test(text)) {
+      return role.title;
+    }
+  }
+
+  return undefined;
 }
 
-/** Role title, band and setup from a pasted JD. */
-export function parseJD(text: string): { roleTitle?: string; bandK?: [number, number]; equity?: string; setup?: string } {
-  const titleLine = text.split(/\n|\. /).map((l) => l.trim()).find((l) =>
-    /\b(engineer|developer|designer|pm|product manager|scientist|analyst|account executive|lead|head of|chief of staff|advocate|marketer|researcher)\b/i.test(l) && l.length < 80);
-  const band = text.match(/\$?\s?(\d{2,3})\s?k?\s?(?:-|–|to)\s?\$?\s?(\d{2,3})\s?k/i);
-  const equity = text.match(/(\d+(?:\.\d+)?(?:\s?-\s?\d+(?:\.\d+)?)?\s?%)\s*(?:equity)?/i);
-  const setup = /\bremote\b/i.test(text) ? "remote" : /\bhybrid\b/i.test(text) ? "hybrid" : /on-?site|in[- ]office/i.test(text) ? "onsite" : undefined;
+// --------------------------------------------------
+// WAREHOUSE SKILLS
+// --------------------------------------------------
+
+const WAREHOUSE_SKILL_PATTERNS: Array<{
+  skill: string;
+  pattern: RegExp;
+}> = [
+  {
+    skill: "forklift",
+    pattern: /\bforklift\b/i,
+  },
+  {
+    skill: "reach truck",
+    pattern: /\breach truck\b/i,
+  },
+  {
+    skill: "cherry picker",
+    pattern: /\bcherry picker\b/i,
+  },
+  {
+    skill: "pallet jack",
+    pattern: /\bpallet jack\b/i,
+  },
+  {
+    skill: "electric pallet jack",
+    pattern: /\belectric pallet jack\b/i,
+  },
+  {
+    skill: "rf scanner",
+    pattern: /\b(rf scanner|rf gun|barcode scanner)\b/i,
+  },
+  {
+    skill: "order picking",
+    pattern: /\b(order picking|pick orders|picking orders)\b/i,
+  },
+  {
+    skill: "packing",
+    pattern: /\b(packaging|packing|packer)\b/i,
+  },
+  {
+    skill: "loading",
+    pattern: /\b(loading|loader|load trucks)\b/i,
+  },
+  {
+    skill: "unloading",
+    pattern: /\b(unloading|unloader|unload trucks)\b/i,
+  },
+  {
+    skill: "shipping",
+    pattern: /\bshipping\b/i,
+  },
+  {
+    skill: "receiving",
+    pattern: /\breceiving\b/i,
+  },
+  {
+    skill: "inventory",
+    pattern: /\binventory\b/i,
+  },
+  {
+    skill: "cycle counting",
+    pattern: /\bcycle count(?:ing)?\b/i,
+  },
+  {
+    skill: "quality control",
+    pattern: /\b(quality control|quality inspection|qc)\b/i,
+  },
+  {
+    skill: "wms",
+    pattern: /\b(wms|warehouse management system)\b/i,
+  },
+];
+
+export function extractWarehouseSkills(
+  text: string
+): string[] {
+  return WAREHOUSE_SKILL_PATTERNS
+    .filter(({ pattern }) => pattern.test(text))
+    .map(({ skill }) => skill);
+}
+
+// --------------------------------------------------
+// HOURLY PAY
+// --------------------------------------------------
+
+export function extractHourlyPayRange(
+  text: string
+): [number, number] | undefined {
+  const range = text.match(
+    /\$\s*(\d+(?:\.\d{1,2})?)\s*(?:-|–|to)\s*\$?\s*(\d+(?:\.\d{1,2})?)\s*(?:\/\s*(?:hr|hour)|per\s+hour|hourly)?/i
+  );
+
+  if (range) {
+    const min = Number(range[1]);
+    const max = Number(range[2]);
+
+    if (min > 0 && max >= min && max <= 150) {
+      return [min, max];
+    }
+  }
+
+  const single = text.match(
+    /\$\s*(\d+(?:\.\d{1,2})?)\s*(?:\/\s*(?:hr|hour)|per\s+hour|hourly)/i
+  );
+
+  if (single) {
+    const rate = Number(single[1]);
+
+    if (rate > 0 && rate <= 150) {
+      return [rate, rate];
+    }
+  }
+
+  return undefined;
+}
+
+export function extractMinimumHourlyPay(
+  text: string
+): number | undefined {
+  const range = extractHourlyPayRange(text);
+
+  if (range) return range[0];
+
+  const minimum = text.match(
+    /\b(?:minimum|min|at least|lowest|need|want|expect)\s*(?:is|of|around|about)?\s*\$?\s*(\d+(?:\.\d{1,2})?)\s*(?:\/hr|per hour|hourly|an hour)?/i
+  );
+
+  if (!minimum) return undefined;
+
+  const value = Number(minimum[1]);
+
+  return value >= 7 && value <= 150
+    ? value
+    : undefined;
+}
+
+// --------------------------------------------------
+// SHIFT EXTRACTION
+// --------------------------------------------------
+
+export function extractWarehouseShifts(
+  text: string
+): WarehouseShift[] {
+  const lower = text.toLowerCase();
+  const shifts: WarehouseShift[] = [];
+
+  if (
+    /\b(first|1st|day|morning)\s*shift\b/.test(lower)
+  ) {
+    shifts.push("first");
+  }
+
+  if (
+    /\b(second|2nd|evening|afternoon)\s*shift\b/.test(lower)
+  ) {
+    shifts.push("second");
+  }
+
+  if (
+    /\b(third|3rd|night|overnight)\s*shift\b/.test(lower)
+  ) {
+    shifts.push("third");
+  }
+
+  if (/\bweekends?\b/.test(lower)) {
+    shifts.push("weekend");
+  }
+
+  if (
+    /\b(any shift|flexible|open availability)\b/.test(lower)
+  ) {
+    shifts.push("flexible");
+  }
+
+  return [...new Set(shifts)];
+}
+
+function extractShiftTime(
+  text: string
+): {
+  shiftStart?: string;
+  shiftEnd?: string;
+} {
+  const match = text.match(
+    /\b(\d{1,2}(?::\d{2})?\s*(?:am|pm))\s*(?:-|–|to)\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i
+  );
+
+  if (!match) return {};
+
   return {
-    roleTitle: titleLine?.replace(/^(we'?re hiring|hiring|role|title)[:\s-]*/i, "").split(/[,(—–-]\s/)[0].trim(),
-    bandK: band ? [Number(band[1]), Number(band[2])] : undefined,
-    equity: equity?.[1].replace(/\s/g, ""),
-    setup,
+    shiftStart: match[1].trim(),
+    shiftEnd: match[2].trim(),
   };
 }
 
-/** Does this sound like someone hiring (vs. someone looking)? */
-export const soundsLikeHiring = (t: string) =>
-  /\b(hiring|recruit\w*|we need|looking for (a|an|someone)|open role|headcount|jd|job description|our team|my team|for my startup|on behalf of)\b/i.test(t);
+// --------------------------------------------------
+// LOCATION EXTRACTION
+// --------------------------------------------------
 
-export const soundsLikeSkip = (t: string) => /^(skip|no|nah|nope|later|don'?t have one|not now)[.! ]*$/i.test(t.trim());
+const STATE_ABBREVIATIONS = new Set([
+  "AL", "AK", "AZ", "AR", "CA", "CO", "CT",
+  "DE", "FL", "GA", "HI", "ID", "IL", "IN",
+  "IA", "KS", "KY", "LA", "ME", "MD", "MA",
+  "MI", "MN", "MS", "MO", "MT", "NE", "NV",
+  "NH", "NJ", "NM", "NY", "NC", "ND", "OH",
+  "OK", "OR", "PA", "RI", "SC", "SD", "TN",
+  "TX", "UT", "VT", "VA", "WA", "WV", "WI",
+  "WY", "DC",
+]);
+
+function extractLocation(
+  text: string
+): {
+  city?: string;
+  state?: string;
+} {
+  const match = text.match(
+    /\b([A-Za-z][A-Za-z .'-]{1,40}),\s*([A-Za-z]{2})\b/
+  );
+
+  if (!match) return {};
+
+  const state = match[2].toUpperCase();
+
+  if (!STATE_ABBREVIATIONS.has(state)) {
+    return {};
+  }
+
+  return {
+    city: match[1].trim(),
+    state,
+  };
+}
+
+// --------------------------------------------------
+// RESUME PARSING
+// --------------------------------------------------
+
+export function parseResume(
+  text: string
+): ParsedWarehouseResume {
+  const yearsMatch = text.match(
+    /\b(\d{1,2})\+?\s*(?:years?|yrs?)\b/i
+  );
+
+  const titleLine = text
+    .split(/\n|\. /)
+    .map((line) => line.trim())
+    .find(
+      (line) =>
+        WAREHOUSE_ROLE_PATTERNS.some(({ pattern }) =>
+          pattern.test(line)
+        ) && line.length < 120
+    );
+
+  const title =
+    (titleLine
+      ? extractWarehouseRole(titleLine)
+      : undefined) ??
+    extractWarehouseRole(text);
+
+  const pay = extractMinimumHourlyPay(text);
+  const location = extractLocation(text);
+
+  return {
+    title,
+    years: yearsMatch
+      ? Number(yearsMatch[1])
+      : undefined,
+    skills: extractWarehouseSkills(text),
+    equipment: extractWarehouseSkills(text).filter(
+      (skill) =>
+        /forklift|reach truck|cherry picker|pallet jack/i.test(skill)
+    ),
+    preferredShifts: extractWarehouseShifts(text),
+    desiredHourlyPay: pay,
+    ...location,
+  };
+}
+
+// --------------------------------------------------
+// JOB DESCRIPTION PARSING
+// --------------------------------------------------
+
+export function parseJD(
+  text: string
+): ParsedWarehouseJD {
+  const titleLine = text
+    .split(/\n|\. /)
+    .map((line) => line.trim())
+    .find(
+      (line) =>
+        WAREHOUSE_ROLE_PATTERNS.some(({ pattern }) =>
+          pattern.test(line)
+        ) && line.length < 120
+    );
+
+  const roleTitle =
+    (titleLine
+      ? extractWarehouseRole(titleLine)
+      : undefined) ??
+    extractWarehouseRole(text);
+
+  const hourly = extractHourlyPayRange(text);
+  const shifts = extractWarehouseShifts(text);
+  const times = extractShiftTime(text);
+  const location = extractLocation(text);
+
+  const workers = text.match(
+    /\b(?:need|hiring|looking for|seeking)\s+(\d{1,3})\s+(?:workers?|associates?|operators?|pickers?|packers?|people|employees?)\b/i
+  );
+
+  const start = text.match(
+    /\b(?:start(?:ing)?|begin(?:ning)?)\s+(?:on\s+)?(\d{4}-\d{2}-\d{2})\b/i
+  );
+
+  const employmentType: WarehouseEmploymentType | undefined =
+    /\bdirect[- ]hire\b/i.test(text)
+      ? "direct-hire"
+      : /\btemporary|temp\b/i.test(text)
+        ? "temporary"
+        : /\bpart[- ]time\b/i.test(text)
+          ? "part-time"
+          : /\bfull[- ]time\b/i.test(text)
+            ? "full-time"
+            : /\bcontract\b/i.test(text)
+              ? "contract"
+              : undefined;
+
+  return {
+    roleTitle,
+
+    // Intentionally omitted: warehouse wages are
+    // hourly, not annual salaries.
+    bandK: undefined,
+    equity: undefined,
+
+    setup:
+      [
+        ...shifts.map((s) => `${s} shift`),
+        times.shiftStart && times.shiftEnd
+          ? `${times.shiftStart}-${times.shiftEnd}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(", ") || undefined,
+
+    hourlyPayMin: hourly?.[0],
+    hourlyPayMax: hourly?.[1],
+
+    ...location,
+
+    shift: shifts[0],
+    ...times,
+
+    workersNeeded: workers
+      ? Number(workers[1])
+      : undefined,
+
+    startDate: start?.[1],
+
+    requiredSkills: extractWarehouseSkills(text),
+
+    requiredEquipment: extractWarehouseSkills(text).filter(
+      (skill) =>
+        /forklift|reach truck|cherry picker|pallet jack/i.test(skill)
+    ),
+
+    employmentType,
+  };
+}
+
+// --------------------------------------------------
+// INTENT DETECTION
+// --------------------------------------------------
+
+export const soundsLikeHiring = (
+  text: string
+): boolean =>
+  /\b(hiring|recruit\w*|we need|need workers|need staff|need employees|looking for (a|an|someone|workers|staff)|open positions?|job openings?|headcount|staffing|fill shifts?|warehouse manager|hiring manager|our warehouse|our distribution center)\b/i.test(
+    text
+  );
+
+export const soundsLikeSkip = (
+  text: string
+): boolean =>
+  /^(skip|no|nah|nope|later|don't have one|dont have one|not now|no resume)[.! ]*$/i.test(
+    text.trim()
+  );
