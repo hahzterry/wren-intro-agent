@@ -1,97 +1,619 @@
+
 import type { Intro, Person } from "../types.js";
 
 /**
- * `reasons` are templates, so the same reason can be said to the candidate ("you have done exactly that")
- * or about them ("Alex has done exactly that"). Render with `renderReasons`.
+ * WAREHOUSEJOBZ AI
+ * Warehouse Worker <-> Employer Matching Engine
+ *
+ * Compatible with the existing Agent API:
+ * - rankCandidates()
+ * - rankFounders()
+ * - renderReasons()
+ * - family()
+ *
+ * Legacy "founder" records represent employers until
+ * the Person/Store schema is migrated.
  */
-export interface MatchResult { founder: Person; score: number; reasons: string[] }
 
-/** "payments, onboarding and growth" */
-export const joinList = (xs: string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`);
+export interface MatchResult {
+  founder: Person;
+  score: number;
+  reasons: string[];
+}
 
-/** Render reason templates for "you" (talking to the candidate) or a name/label (talking about them). */
-export function renderReasons(reasons: string[], who: string, max = reasons.length): string {
+export interface CandidateMatchResult {
+  candidate: Person;
+  score: number;
+  reasons: string[];
+}
+
+type WarehouseShift =
+  | "first"
+  | "second"
+  | "third"
+  | "weekend"
+  | "flexible";
+
+type WarehouseFamily =
+  | "forklift"
+  | "picking"
+  | "packing"
+  | "loading"
+  | "inventory"
+  | "shipping"
+  | "general"
+  | "supervisor";
+
+type WarehouseCandidate = NonNullable<Person["candidate"]> & {
+  desiredHourlyPay?: number;
+  preferredShifts?: WarehouseShift[];
+  city?: string;
+  state?: string;
+  zipCode?: string;
+  maxCommuteMiles?: number;
+  availableFrom?: string;
+  equipmentExperience?: string[];
+  forkliftTraining?: {
+    reported: boolean;
+    verified: boolean;
+  };
+  screeningStatus?: string;
+};
+
+type WarehouseEmployer = NonNullable<Person["founder"]> & {
+  hourlyPayMin?: number;
+  hourlyPayMax?: number;
+  city?: string;
+  state?: string;
+  shiftStart?: string;
+  shiftEnd?: string;
+  shift?: WarehouseShift;
+  startDate?: string;
+  workersNeeded?: number;
+  status?: string;
+  requiredEquipment?: string[];
+  requiresVerifiedForkliftTraining?: boolean;
+  employmentType?: string;
+};
+
+export const MIN_SCORE = 4;
+
+// Unlike startup recruiting, warehouse openings may
+// legitimately require only one specific skill.
+export const MIN_OVERLAP = 1;
+
+export const joinList = (xs: string[]): string =>
+  xs.length < 2
+    ? xs.join("")
+    : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`;
+
+export function renderReasons(
+  reasons: string[],
+  who: string,
+  max = reasons.length
+): string {
   const you = who === "you";
-  const parts = reasons.slice(0, max).map((r) => r
-    .replace(/\{Cs\}/g, you ? "your" : `${who}'s`)
-    .replace(/\{C\}/g, who)
-    .replace(/\{has\}/g, you ? "have" : "has")
-    .replace(/\{wants\}/g, you ? "want" : "wants"));
-  const s = parts.length > 1 ? `${parts.slice(0, -1).join("; ")}; and ${parts.at(-1)}` : parts[0] ?? "";
+
+  const parts = reasons.slice(0, max).map((r) =>
+    r
+      .replace(/\{Cs\}/g, you ? "your" : `${who}'s`)
+      .replace(/\{C\}/g, who)
+      .replace(/\{has\}/g, you ? "have" : "has")
+      .replace(/\{wants\}/g, you ? "want" : "wants")
+  );
+
+  const s =
+    parts.length > 1
+      ? `${parts.slice(0, -1).join("; ")}; and ${parts.at(-1)}`
+      : parts[0] ?? "";
+
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-/** The bar a friend uses: only make the intro if it's clearly good. */
-export const MIN_SCORE = 4;
-/** A friend wouldn't suggest a match on one shared buzzword. */
-export const MIN_OVERLAP = 2;
+// --------------------------------------------------
+// WAREHOUSE JOB CLASSIFICATION
+// --------------------------------------------------
 
-type Family = "eng" | "design" | "pm" | "gtm" | "data" | "ops";
-const FAMILIES: [Family, RegExp][] = [
-  ["pm", /\b(pm|product manager|product lead|head of product)\b/i],
-  ["design", /\bdesign(er)?\b/i],
-  ["data", /\b(data scientist|analyst|analytics)\b/i],
-  ["gtm", /\b(account executive|sales|growth|marketing|advocate|devrel|gtm)\b/i],
-  ["ops", /\b(chief of staff|operations|bizops|ops)\b/i],
-  ["eng", /\b(engineer|developer|swe|ios|android|backend|frontend|full-?stack|ml)\b/i],
+const FAMILIES: [WarehouseFamily, RegExp][] = [
+  [
+    "forklift",
+    /\b(forklift|reach truck|cherry picker|clamp truck|order picker operator)\b/i,
+  ],
+  [
+    "picking",
+    /\b(order pick(?:er|ing)?|picker|pick and pack|fulfillment associate)\b/i,
+  ],
+  [
+    "packing",
+    /\b(pack(?:er|ing)|packaging|sortation|sorter)\b/i,
+  ],
+  [
+    "loading",
+    /\b(load(?:er|ing)?|unload(?:er|ing)?|dock worker|freight handler)\b/i,
+  ],
+  [
+    "inventory",
+    /\b(inventory|cycle count|stock control|inventory control)\b/i,
+  ],
+  [
+    "shipping",
+    /\b(shipping|receiving|distribution associate)\b/i,
+  ],
+  [
+    "supervisor",
+    /\b(supervisor|team lead|shift lead|warehouse manager)\b/i,
+  ],
+  [
+    "general",
+    /\b(warehouse associate|general labor|material handler|warehouse worker)\b/i,
+  ],
 ];
-/** The kind of job a title describes, or undefined if we can't tell (then we don't filter on it). */
-export function family(title = ""): Family | undefined {
+
+export function family(
+  title = ""
+): WarehouseFamily | undefined {
   return FAMILIES.find(([, re]) => re.test(title))?.[0];
 }
 
-/** Employer-initiated: the same rules, run from the role's side. Candidates still in intake are skipped. */
-export function rankCandidates(f: Person, people: Person[], intros: Intro[]): { candidate: Person; score: number; reasons: string[] }[] {
-  const already = new Set(intros.filter((i) => i.founderId === f.id).map((i) => i.candidateId));
-  const out: { candidate: Person; score: number; reasons: string[] }[] = [];
-  for (const c of people) {
-    if (c.role !== "candidate" || c.stage !== "ready" || already.has(c.id) || c.optedOut) continue;
-    const r = rankFounders(c, [f], [])[0];
-    if (r) out.push({ candidate: c, score: r.score, reasons: r.reasons });
+// --------------------------------------------------
+// NORMALIZATION
+// --------------------------------------------------
+
+function normalizeSkill(value: string): string {
+  const skill = value
+    .toLowerCase()
+    .trim()
+    .replace(/[-_/]/g, " ")
+    .replace(/\s+/g, " ");
+
+  const aliases: Record<string, string> = {
+    "forklift driver": "forklift",
+    "forklift operator": "forklift",
+    "sit down forklift": "forklift",
+    "stand up forklift": "forklift",
+    "reach forklift": "reach truck",
+    "reach lift": "reach truck",
+    "rf scanning": "rf scanner",
+    "rf gun": "rf scanner",
+    "picking": "order picking",
+    "picker": "order picking",
+    "packing": "packing",
+    "pallet jacks": "pallet jack",
+    "electric pallet jacks": "electric pallet jack",
+    "loading trucks": "loading",
+    "unloading trucks": "unloading",
+  };
+
+  return aliases[skill] ?? skill;
+}
+
+function normalizeShift(
+  value?: string
+): WarehouseShift | undefined {
+  if (!value) return undefined;
+
+  const s = value.toLowerCase();
+
+  if (/flexible|any shift|open availability/.test(s))
+    return "flexible";
+
+  if (/weekend|sat|sun/.test(s))
+    return "weekend";
+
+  if (/third|3rd|overnight|night shift|graveyard/.test(s))
+    return "third";
+
+  if (/second|2nd|evening|afternoon shift/.test(s))
+    return "second";
+
+  if (/first|1st|morning|day shift/.test(s))
+    return "first";
+
+  return undefined;
+}
+
+function extractHourlyPay(
+  text: string
+): [number, number] | undefined {
+  const range = text.match(
+    /\$\s*(\d+(?:\.\d{1,2})?)\s*(?:-|–|to)\s*\$?\s*(\d+(?:\.\d{1,2})?)/i
+  );
+
+  if (range) {
+    const min = Number(range[1]);
+    const max = Number(range[2]);
+
+    if (min > 0 && max >= min && max <= 150) {
+      return [min, max];
+    }
   }
+
+  const single = text.match(
+    /\$\s*(\d+(?:\.\d{1,2})?)\s*(?:\/\s*(?:hr|hour)|per hour|hourly)/i
+  );
+
+  if (single) {
+    const rate = Number(single[1]);
+
+    if (rate > 0 && rate <= 150) {
+      return [rate, rate];
+    }
+  }
+
+  return undefined;
+}
+
+function getEmployerPay(
+  fp: WarehouseEmployer
+): [number, number] | undefined {
+  if (
+    fp.hourlyPayMin !== undefined &&
+    fp.hourlyPayMax !== undefined
+  ) {
+    return [fp.hourlyPayMin, fp.hourlyPayMax];
+  }
+
+  // Do not interpret legacy bandK as hourly pay.
+  return extractHourlyPay(fp.jd ?? "");
+}
+
+function getCandidatePay(
+  cp: WarehouseCandidate
+): number | undefined {
+  // Legacy floorK is annual salary in thousands.
+  // It must never be compared directly to hourly pay.
+  return cp.desiredHourlyPay;
+}
+
+function sameLocation(
+  cp: WarehouseCandidate,
+  fp: WarehouseEmployer
+): boolean | undefined {
+  if (!cp.city || !fp.city) return undefined;
+
+  if (
+    cp.state &&
+    fp.state &&
+    cp.state.toLowerCase() !== fp.state.toLowerCase()
+  ) {
+    return false;
+  }
+
+  return (
+    cp.city.trim().toLowerCase() ===
+    fp.city.trim().toLowerCase()
+  );
+}
+
+function validDate(value?: string): number | undefined {
+  if (!value) return undefined;
+
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp)
+    ? timestamp
+    : undefined;
+}
+
+// --------------------------------------------------
+// MATCH SCORING
+// --------------------------------------------------
+
+function scoreWarehouseMatch(
+  c: Person,
+  f: Person
+): { score: number; reasons: string[] } | null {
+  const cp = c.candidate as WarehouseCandidate | undefined;
+  const fp = f.founder as WarehouseEmployer | undefined;
+
+  if (!cp || !fp) return null;
+  if (c.optedOut || f.optedOut) return null;
+
+  if (fp.status === "closed" || fp.status === "filled")
+    return null;
+
+  if (
+    fp.workersNeeded !== undefined &&
+    fp.workersNeeded <= 0
+  ) {
+    return null;
+  }
+
+  const reasons: string[] = [];
+  let score = 0;
+
+  // ----------------------------------------------
+  // 1. ROLE COMPATIBILITY
+  // ----------------------------------------------
+
+  const workerFamily = family(cp.title);
+  const jobFamily = family(fp.roleTitle);
+
+  if (
+    workerFamily &&
+    jobFamily &&
+    workerFamily !== jobFamily &&
+    workerFamily !== "general" &&
+    jobFamily !== "general"
+  ) {
+    return null;
+  }
+
+  if (workerFamily && workerFamily === jobFamily) {
+    score += 3;
+    reasons.push(
+      `{C} {has} experience in ${fp.roleTitle}`
+    );
+  } else if (
+    workerFamily === "general" ||
+    jobFamily === "general"
+  ) {
+    score += 1;
+    reasons.push(
+      `{Cs} warehouse background may fit this position`
+    );
+  }
+
+  // ----------------------------------------------
+  // 2. REQUIRED SKILLS
+  // ----------------------------------------------
+
+  const workerSkills = new Set(
+    [
+      ...cp.skills,
+      ...(cp.equipmentExperience ?? []),
+    ].map(normalizeSkill)
+  );
+
+  const requiredSkills = [
+    ...new Set(
+      [
+        ...fp.mustHaves,
+        ...(fp.requiredEquipment ?? []),
+      ].map(normalizeSkill)
+    ),
+  ];
+
+  const overlap = requiredSkills.filter((skill) =>
+    workerSkills.has(skill)
+  );
+
+  // All explicitly required skills must be met.
+  // Missing requirements must be reviewed rather
+  // than silently treating them as satisfied.
+  if (
+    requiredSkills.length > 0 &&
+    overlap.length !== requiredSkills.length
+  ) {
+    return null;
+  }
+
+  if (overlap.length >= MIN_OVERLAP) {
+    score += overlap.length * 2;
+
+    reasons.push(
+      `{C} {has} experience with ${joinList(overlap)}`
+    );
+  }
+
+  // ----------------------------------------------
+  // 3. FORKLIFT TRAINING VERIFICATION
+  // ----------------------------------------------
+
+  if (fp.requiresVerifiedForkliftTraining) {
+    if (!cp.forkliftTraining?.verified) {
+      return null;
+    }
+
+    score += 2;
+    reasons.push(
+      `{Cs} forklift training has been verified`
+    );
+  }
+
+  // ----------------------------------------------
+  // 4. HOURLY PAY
+  // ----------------------------------------------
+
+  const pay = getEmployerPay(fp);
+  const desiredPay = getCandidatePay(cp);
+
+  if (desiredPay !== undefined && pay) {
+    if (pay[1] < desiredPay) {
+      return null;
+    }
+
+    if (pay[0] >= desiredPay) {
+      score += 3;
+
+      reasons.push(
+        `the hourly rate meets {Cs} $${desiredPay}/hr minimum`
+      );
+    } else {
+      score += 1;
+
+      reasons.push(
+        `the hourly pay range reaches {Cs} requested rate`
+      );
+    }
+  }
+
+  // ----------------------------------------------
+  // 5. SHIFT AVAILABILITY
+  // ----------------------------------------------
+
+  const jobShift =
+    fp.shift ??
+    normalizeShift(fp.setup);
+
+  const preferredShifts =
+    cp.preferredShifts ?? [];
+
+  if (jobShift && preferredShifts.length > 0) {
+    if (
+      !preferredShifts.includes(jobShift) &&
+      !preferredShifts.includes("flexible")
+    ) {
+      return null;
+    }
+
+    score += 3;
+
+    reasons.push(
+      `the ${jobShift} shift matches {Cs} availability`
+    );
+  }
+
+  // ----------------------------------------------
+  // 6. LOCATION
+  // ----------------------------------------------
+
+  const location = sameLocation(cp, fp);
+
+  if (location === true) {
+    score += 2;
+
+    reasons.push(
+      `the warehouse is in {Cs} preferred city`
+    );
+  }
+
+  // A different city is not automatically
+  // disqualifying: the worker may commute.
+  // Actual distance requires geocoding/routing.
+
+  // ----------------------------------------------
+  // 7. START DATE
+  // ----------------------------------------------
+
+  const available = validDate(cp.availableFrom);
+  const start = validDate(fp.startDate);
+
+  if (
+    available !== undefined &&
+    start !== undefined
+  ) {
+    if (available > start) {
+      return null;
+    }
+
+    score += 2;
+
+    reasons.push(
+      `{C} {has} availability for the start date`
+    );
+  }
+
+  // ----------------------------------------------
+  // 8. SCREENING STATUS
+  // ----------------------------------------------
+
+  if (cp.screeningStatus === "ready") {
+    score += 1;
+
+    reasons.push(
+      `{Cs} initial screening is complete`
+    );
+  }
+
+  if (score < MIN_SCORE) return null;
+
+  return { score, reasons };
+}
+
+// --------------------------------------------------
+// EMPLOYER-INITIATED MATCHING
+// --------------------------------------------------
+
+export function rankCandidates(
+  f: Person,
+  people: Person[],
+  intros: Intro[]
+): CandidateMatchResult[] {
+  if (
+    f.role !== "founder" ||
+    f.stage !== "ready" ||
+    f.optedOut
+  ) {
+    return [];
+  }
+
+  const already = new Set(
+    intros
+      .filter((i) => i.founderId === f.id)
+      .map((i) => i.candidateId)
+  );
+
+  const out: CandidateMatchResult[] = [];
+
+  for (const c of people) {
+    if (
+      c.role !== "candidate" ||
+      c.stage !== "ready" ||
+      c.optedOut ||
+      already.has(c.id)
+    ) {
+      continue;
+    }
+
+    const result = scoreWarehouseMatch(c, f);
+
+    if (!result) continue;
+
+    out.push({
+      candidate: c,
+      score: result.score,
+      reasons: result.reasons,
+    });
+  }
+
   return out.sort((a, b) => b.score - a.score);
 }
 
-/**
- * Hard filters first (role family, pay, setup, real skill overlap), then a small score. Deliberately simple and
- * explainable: every point has a sentence attached, and those sentences become Wren's "why you two".
- */
-export function rankFounders(c: Person, people: Person[], intros: Intro[]): MatchResult[] {
-  const cp = c.candidate;
-  if (!cp) return [];
-  const already = new Set(intros.filter((i) => i.candidateId === c.id).map((i) => i.founderId));
-  const cFam = family(cp.title);
-  const out: MatchResult[] = [];
-  for (const f of people) {
-    const fp = f.founder;
-    if (f.role !== "founder" || !fp || already.has(f.id)) continue;
-    const fFam = family(fp.roleTitle);
-    if (cFam && fFam && cFam !== fFam) continue;
-    const reasons: string[] = [];
-    let score = 0;
-    const overlap = fp.mustHaves.filter((m) => cp.skills.includes(m));
-    if (overlap.length < MIN_OVERLAP) continue;
-    score += overlap.length * 2;
-    reasons.push(`${f.first} needs ${joinList(overlap)}, and {C} {has} done exactly that`);
-    if (cp.floorK !== undefined) {
-      if (fp.bandK[1] < cp.floorK) continue;
-      if (fp.bandK[0] >= cp.floorK) {
-        score += 2;
-        reasons.push(`the band ($${fp.bandK[0]}-${fp.bandK[1]}K) clears {Cs} $${cp.floorK}K floor`);
-      } else {
-        score += 1;
-        reasons.push(`the band ($${fp.bandK[0]}-${fp.bandK[1]}K) reaches {Cs} $${cp.floorK}K floor`);
-      }
-    }
-    if (cp.setups?.length) {
-      if (!cp.setups.includes(fp.setup)) continue;
-      reasons.push(`it's ${fp.setup}, which {C} {wants}`);
-    }
-    if (cp.stages?.length && cp.stages.includes(fp.stage)) {
-      score += 1;
-      reasons.push(`${fp.stage} is in {Cs} range`);
-    }
-    out.push({ founder: f, score, reasons });
+// --------------------------------------------------
+// WORKER-INITIATED MATCHING
+// --------------------------------------------------
+
+export function rankFounders(
+  c: Person,
+  people: Person[],
+  intros: Intro[]
+): MatchResult[] {
+  if (
+    c.role !== "candidate" ||
+    c.stage !== "ready" ||
+    c.optedOut
+  ) {
+    return [];
   }
+
+  const already = new Set(
+    intros
+      .filter((i) => i.candidateId === c.id)
+      .map((i) => i.founderId)
+  );
+
+  const out: MatchResult[] = [];
+
+  for (const f of people) {
+    if (
+      f.role !== "founder" ||
+      f.stage !== "ready" ||
+      f.optedOut ||
+      already.has(f.id)
+    ) {
+      continue;
+    }
+
+    const result = scoreWarehouseMatch(c, f);
+
+    if (!result) continue;
+
+    out.push({
+      founder: f,
+      score: result.score,
+      reasons: result.reasons,
+    });
+  }
+
   return out.sort((a, b) => b.score - a.score);
 }
