@@ -1,5 +1,4 @@
-
-import Anthropic from "@anthropic-ai/sdk";
+import { Anthropic } from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 
@@ -21,8 +20,19 @@ import { say } from "./voice.js";
 
 /**
  * WAREHOUSEJOBZ AI
- * Warehouse recruiting, screening, matching,
- * employer introductions and shift coordination.
+ *
+ * AI-powered warehouse recruiting assistant.
+ *
+ * Features:
+ * - Warehouse worker onboarding
+ * - Employer onboarding
+ * - Warehouse experience screening
+ * - Equipment experience screening
+ * - Hourly pay expectations
+ * - Shift preferences
+ * - Worker/employer matching
+ * - Double-opt-in introductions
+ * - Interview coordination
  *
  * Backward compatible with the original Brain API.
  */
@@ -37,26 +47,29 @@ You help warehouses find qualified, available workers.
 You help workers find warehouse jobs matching their
 experience, hourly pay expectations, location, and shifts.
 
-You support:
+SUPPORTED WAREHOUSE POSITIONS:
 - Warehouse associates
 - Forklift operators
 - Reach truck operators
+- Cherry picker operators
 - Order pickers
 - Packers
 - Loaders and unloaders
 - Material handlers
-- Shipping and receiving workers
+- Shipping associates
+- Receiving associates
 - Inventory associates
 - Warehouse supervisors
 
 COMMUNICATION STYLE:
-- Friendly, direct and professional.
+- Friendly, direct, and professional.
 - Sound like a helpful warehouse recruiter.
 - Use short conversational text messages.
 - Ask one question at a time whenever possible.
 - Use first names.
 - Avoid corporate jargon.
-- Do not use markdown, long lists, or unnecessary emojis.
+- Do not use markdown or long lists.
+- Avoid unnecessary emojis.
 - Clearly identify yourself as an AI assistant.
 
 WORKER SCREENING:
@@ -81,7 +94,7 @@ EMPLOYER SCREENING:
 - Ask for mandatory job qualifications.
 
 MATCHING:
-- Prioritize verified job requirements.
+- Prioritize job-related qualifications.
 - Consider hourly pay and preferred shifts.
 - Consider availability and location.
 - Explain why a match may be suitable.
@@ -92,8 +105,8 @@ PRIVACY:
 - Do not share private contact details without consent.
 - Do not reveal hidden worker pay preferences.
 - Do not expose confidential employer information.
-- Respect opt-outs and do not reactivate messaging
-  without valid renewed consent.
+- Respect opt-outs.
+- Do not reactivate messaging without valid renewed consent.
 
 FAIR HIRING:
 - Evaluate job-related qualifications only.
@@ -102,14 +115,14 @@ FAIR HIRING:
 - Do not make final hiring decisions.
 - Employers remain responsible for hiring decisions.
 - Flag unclear qualifications for human review.
-- Do not claim legal or employment eligibility verification
-  has occurred unless the system confirms it.
+- Never claim eligibility verification has occurred
+  unless the system confirms it.
 
 SHIFT SAFETY:
 - Never claim a worker is booked without confirmation.
 - Never claim a worker attended a shift without evidence.
 - Never invent job openings, pay rates, start dates,
-  locations, interviews or employer approvals.
+  locations, interviews, or employer approvals.
 
 GROUP CHAT:
 - Introduce the worker and employer after both consent.
@@ -144,14 +157,15 @@ const ShiftSchema = z.enum([
 const transcript = (
   lines: { who: string; text: string }[]
 ): string =>
-  lines.map((l) => `${l.who}: ${l.text}`).join("\n");
+  lines.map((line) => `${line.who}: ${line.text}`).join("\n");
 
-const sentence = (s: string): string =>
-  /[.!?]$/.test(s.trim()) ? s.trim() : `${s.trim()}.`;
-
-const lowerFirst = (s: string): string =>
-  s.charAt(0).toLowerCase() + s.slice(1);
-
+/**
+ * Extract a valid hourly wage.
+ *
+ * This is intentionally conservative.
+ * Annual salaries and unrelated dollar amounts
+ * should not be interpreted as hourly wages.
+ */
 function extractHourlyPay(
   text: string
 ): number | null {
@@ -161,7 +175,10 @@ function extractHourlyPay(
 
   if (explicit) {
     const value = Number(explicit[1]);
-    return value > 0 && value <= 150 ? value : null;
+
+    return value > 0 && value <= 150
+      ? value
+      : null;
   }
 
   const stated = text.match(
@@ -170,37 +187,68 @@ function extractHourlyPay(
 
   if (stated) {
     const value = Number(stated[1]);
-    return value >= 7 && value <= 150 ? value : null;
+
+    return value >= 7 && value <= 150
+      ? value
+      : null;
   }
 
   return null;
 }
 
+/**
+ * Extract warehouse shift preferences.
+ */
 function extractShifts(text: string): Shift[] {
   const lower = text.toLowerCase();
   const shifts: Shift[] = [];
 
-  if (/\b(first|1st|day|morning)\s*shift\b/.test(lower))
+  if (
+    /\b(first|1st|day|morning)\s*shift\b/.test(lower)
+  ) {
     shifts.push("first");
+  }
 
-  if (/\b(second|2nd|evening|afternoon)\s*shift\b/.test(lower))
+  if (
+    /\b(second|2nd|evening|afternoon)\s*shift\b/.test(
+      lower
+    )
+  ) {
     shifts.push("second");
+  }
 
-  if (/\b(third|3rd|night|overnight)\s*shift\b/.test(lower))
+  if (
+    /\b(third|3rd|night|overnight)\s*shift\b/.test(
+      lower
+    ) ||
+    /\bovernight\b/.test(lower)
+  ) {
     shifts.push("third");
+  }
 
-  if (/\bweekends?\b/.test(lower))
+  if (/\bweekends?\b/.test(lower)) {
     shifts.push("weekend");
+  }
 
-  if (/\b(any shift|flexible|open availability)\b/.test(lower))
+  if (
+    /\b(any shift|flexible|open availability)\b/.test(
+      lower
+    )
+  ) {
     shifts.push("flexible");
+  }
 
   return [...new Set(shifts)];
 }
 
+/**
+ * Extract warehouse-specific skills.
+ */
 function warehouseSkills(text: string): string[] {
   const known = [
     "forklift",
+    "sit-down forklift",
+    "stand-up forklift",
     "reach truck",
     "cherry picker",
     "pallet jack",
@@ -223,16 +271,22 @@ function warehouseSkills(text: string): string[] {
   return [
     ...new Set([
       ...extractSkills(text),
-      ...known.filter((skill) => lower.includes(skill)),
+      ...known.filter((skill) =>
+        lower.includes(skill)
+      ),
     ]),
   ];
 }
 
-function employerHourlyPay(
-  p: Person
-): string {
+/**
+ * Return employer hourly pay without inventing it.
+ */
+function employerHourlyPay(p: Person): string {
   const fp = p.founder;
-  if (!fp) return "Pay not confirmed";
+
+  if (!fp) {
+    return "Pay not confirmed";
+  }
 
   const structured = fp as typeof fp & {
     hourlyPayMin?: number;
@@ -243,7 +297,8 @@ function employerHourlyPay(
     structured.hourlyPayMin !== undefined &&
     structured.hourlyPayMax !== undefined
   ) {
-    return structured.hourlyPayMin === structured.hourlyPayMax
+    return structured.hourlyPayMin ===
+      structured.hourlyPayMax
       ? `$${structured.hourlyPayMin}/hr`
       : `$${structured.hourlyPayMin}-$${structured.hourlyPayMax}/hr`;
   }
@@ -255,47 +310,95 @@ function employerHourlyPay(
   );
 
   if (range) {
-    return `$${range[1]}-$${range[2]}/hr`;
+    const low = Number(range[1]);
+    const high = Number(range[2]);
+
+    if (
+      low > 0 &&
+      high >= low &&
+      high <= 150
+    ) {
+      return `$${low}-$${high}/hr`;
+    }
   }
 
   const single = jd.match(
     /\$\s*(\d+(?:\.\d{1,2})?)\s*(?:\/hr|per hour|hourly)/i
   );
 
-  return single
-    ? `$${single[1]}/hr`
-    : "Pay not confirmed";
+  if (single) {
+    const value = Number(single[1]);
+
+    if (value > 0 && value <= 150) {
+      return `$${value}/hr`;
+    }
+  }
+
+  return "Pay not confirmed";
 }
 
+/**
+ * Worker summary used for fallback introductions.
+ */
 function workerLine(p: Person): string {
   const cp = p.candidate;
 
-  if (!cp) return p.name;
+  if (!cp) {
+    return p.name;
+  }
 
   const experience = cp.years
     ? `${cp.years} years of warehouse experience`
     : "warehouse job applicant";
 
   const skills = cp.skills.length
-    ? `Experience includes ${cp.skills.slice(0, 5).join(", ")}.`
+    ? `Reported skills include ${cp.skills
+        .slice(0, 5)
+        .join(", ")}.`
     : "";
 
   return `${p.name} has ${experience}. ${skills}`.trim();
 }
 
+/**
+ * Main WarehouseJobz AI brain.
+ *
+ * IMPORTANT:
+ * Uses the named Anthropic SDK export.
+ *
+ * This addresses:
+ *
+ * TS2709:
+ * Cannot use namespace 'Anthropic' as a type.
+ *
+ * TS2351:
+ * This expression is not constructable.
+ */
 export class Brain {
-  private client?: Anthropic;
+  private readonly client: Anthropic | undefined;
 
   constructor(
     readonly enabled: boolean,
-    private model: string,
-    private onLog: (msg: string) => void = () => {}
+    private readonly model: string,
+    private readonly onLog: (
+      msg: string
+    ) => void = () => {}
   ) {
     if (enabled) {
-      this.client = new Anthropic();
+      this.client = new Anthropic({
+        apiKey: process.env.ANTHROPIC_API_KEY,
+      });
     }
   }
 
+  /**
+   * Execute a structured Claude request.
+   *
+   * Returns null when Claude is unavailable,
+   * refuses, or encounters an API error.
+   *
+   * Other Brain methods provide local fallbacks.
+   */
   private async ask<S extends z.ZodType>(
     name: string,
     schema: S,
@@ -303,43 +406,50 @@ export class Brain {
     input: string,
     effort: Effort
   ): Promise<z.infer<S> | null> {
-    if (!this.client) return null;
+    if (!this.client) {
+      return null;
+    }
 
     const fallback =
       /opus|sonnet|fable|mythos/i.test(this.model)
         ? {
-            betas: ["server-side-fallback-2026-07-01"],
+            betas: [
+              "server-side-fallback-2026-07-01",
+            ],
             fallbacks: "default" as const,
           }
         : {};
 
     try {
-      const res = await this.client.beta.messages.parse({
-        model: this.model,
-        max_tokens: 8000,
-        ...fallback,
-        output_config: {
-          effort,
-          format: betaZodOutputFormat(schema),
-        },
-        system: [
-          {
-            type: "text",
-            text: PERSONA,
-            cache_control: { type: "ephemeral" },
+      const res =
+        await this.client.beta.messages.parse({
+          model: this.model,
+          max_tokens: 8000,
+          ...fallback,
+          output_config: {
+            effort,
+            format: betaZodOutputFormat(schema),
           },
-          {
-            type: "text",
-            text: task,
-          },
-        ],
-        messages: [
-          {
-            role: "user",
-            content: input,
-          },
-        ],
-      });
+          system: [
+            {
+              type: "text",
+              text: PERSONA,
+              cache_control: {
+                type: "ephemeral",
+              },
+            },
+            {
+              type: "text",
+              text: task,
+            },
+          ],
+          messages: [
+            {
+              role: "user",
+              content: input,
+            },
+          ],
+        });
 
       if (
         res.stop_reason === "refusal" ||
@@ -348,6 +458,7 @@ export class Brain {
         this.onLog(
           `${name}: stop_reason=${res.stop_reason}, using fallback`
         );
+
         return null;
       }
 
@@ -358,14 +469,23 @@ export class Brain {
       return res.parsed_output ?? null;
     } catch (err) {
       if (err instanceof Anthropic.RateLimitError) {
-        this.onLog(`${name}: rate limited`);
-      } else if (err instanceof Anthropic.APIError) {
+        this.onLog(
+          `${name}: rate limited`
+        );
+      } else if (
+        err instanceof Anthropic.APIError
+      ) {
         this.onLog(
           `${name}: API ${err.status} ${err.message.slice(0, 120)}`
         );
       } else {
+        const message =
+          err instanceof Error
+            ? err.message
+            : String(err);
+
         this.onLog(
-          `${name}: ${(err as Error).message.slice(0, 160)}`
+          `${name}: ${message.slice(0, 160)}`
         );
       }
 
@@ -386,9 +506,20 @@ export class Brain {
     const schema = z.object({
       reply: z.string(),
       floorK: z.number().nullable(),
-      setups: z.array(z.enum(["remote", "hybrid", "onsite"])),
+      setups: z.array(
+        z.enum([
+          "remote",
+          "hybrid",
+          "onsite",
+        ])
+      ),
       stages: z.array(
-        z.enum(["seed", "series a", "series b", "series c"])
+        z.enum([
+          "seed",
+          "series a",
+          "series b",
+          "series c",
+        ])
       ),
       skills: z.array(z.string()),
       desiredHourlyPay: z.number().nullable(),
@@ -413,9 +544,8 @@ Extract:
 
 Never invent qualifications.
 
-Return the legacy fields for API compatibility:
-floorK must always be null because it represents
-annual salary in thousands.
+Return legacy fields for API compatibility:
+floorK must always be null.
 setups must be [].
 stages must be [].
 
@@ -447,19 +577,20 @@ Ask the next question when provided.`,
         ? out.skills
         : warehouseSkills(answer);
 
-    // The original agent.ts only persists
-    // floorK, setups, stages and skills.
-    // Persist warehouse fields here until
-    // agent.ts is updated to do so directly.
     if (p.candidate) {
-      const cp = p.candidate as typeof p.candidate & {
-        desiredHourlyPay?: number;
-        preferredShifts?: Shift[];
-        availableFrom?: string;
-        equipmentExperience?: string[];
-      };
+      const cp = p.candidate as
+        typeof p.candidate & {
+          desiredHourlyPay?: number;
+          preferredShifts?: Shift[];
+          availableFrom?: string;
+          equipmentExperience?: string[];
+        };
 
-      if (hourly !== null) {
+      if (
+        hourly !== null &&
+        hourly > 0 &&
+        hourly <= 150
+      ) {
         cp.desiredHourlyPay = hourly;
       }
 
@@ -473,7 +604,8 @@ Ask the next question when provided.`,
       }
 
       if (out?.availableFrom) {
-        cp.availableFrom = out.availableFrom;
+        cp.availableFrom =
+          out.availableFrom;
       }
 
       const equipment =
@@ -490,8 +622,10 @@ Ask the next question when provided.`,
     }
 
     const ack =
-      say.feel(`${p.id}:${p.asked}`, answer) ??
-      "Got it, thanks for sharing.";
+      say.feel(
+        `${p.id}:${p.asked}`,
+        answer
+      ) ?? "Got it, thanks for sharing.";
 
     return {
       reply:
@@ -499,14 +633,22 @@ Ask the next question when provided.`,
         (nextQuestion
           ? `${ack} ${nextQuestion}`
           : ack),
+
       floorK: null,
-      setups: [] as ("remote" | "hybrid" | "onsite")[],
+
+      setups: [] as (
+        | "remote"
+        | "hybrid"
+        | "onsite"
+      )[],
+
       stages: [] as (
         | "seed"
         | "series a"
         | "series b"
         | "series c"
       )[],
+
       skills,
     };
   }
@@ -515,7 +657,9 @@ Ask the next question when provided.`,
   // WORKER PROFILE
   // ---------------------------------------------
 
-  async writeBlurb(p: Person): Promise<string> {
+  async writeBlurb(
+    p: Person
+  ): Promise<string> {
     const c = p.candidate!;
 
     const out = await this.ask(
@@ -533,7 +677,7 @@ Include:
 - Equipment experience if known
 - Shift preferences if known
 
-Use only verified or clearly self-reported facts.
+Use only confirmed or clearly self-reported facts.
 Never invent certifications.
 Do not include private contact details.
 Do not disclose pay expectations.`,
@@ -544,7 +688,9 @@ Do not disclose pay expectations.`,
       "medium"
     );
 
-    if (out?.blurb) return out.blurb;
+    if (out?.blurb) {
+      return out.blurb;
+    }
 
     return workerLine(p);
   }
@@ -574,13 +720,19 @@ Respect requests to hide compensation.`,
       "low"
     );
 
-    if (out) return out;
+    if (out) {
+      return out;
+    }
 
     return {
-      blurb: p.blurb ?? workerLine(p),
+      blurb:
+        p.blurb ?? workerLine(p),
+
       hideComp:
         p.hideComp ||
-        /\b(pay|wage|salary|compensation|money)\b/i.test(request),
+        /\b(pay|wage|salary|compensation|money)\b/i.test(
+          request
+        ),
     };
   }
 
@@ -594,7 +746,10 @@ Respect requests to hide compensation.`,
   ): Promise<Intent> {
     const quick = intent(text);
 
-    if (quick === "yes" || quick === "no") {
+    if (
+      quick === "yes" ||
+      quick === "no"
+    ) {
       return quick;
     }
 
@@ -661,10 +816,12 @@ Do not treat a question as acceptance.`,
       "warehouse_intake",
       z.object({
         name: z.string().nullable(),
-        side: z.enum([
-          "hiring",
-          "looking",
-        ]).nullable(),
+        side: z
+          .enum([
+            "hiring",
+            "looking",
+          ])
+          .nullable(),
         voucher: z.string().nullable(),
       }),
       `Identify whether this person is:
@@ -716,7 +873,7 @@ Candidate messages:
 - Explain hourly pay if confirmed.
 - Mention location and shift if known.
 - Explain why the job may fit.
-- Ask for permission to introduce them.
+- Ask permission to introduce them.
 
 Employer messages:
 - Introduce the interested worker.
@@ -750,7 +907,10 @@ Keep messages short.`,
           jd: fp.jd,
           slots: fp.slots,
         },
-        reasons: renderReasons(reasons, c.first),
+        reasons: renderReasons(
+          reasons,
+          c.first
+        ),
       }),
       "medium"
     );
@@ -770,28 +930,51 @@ Keep messages short.`,
       2
     );
 
-    const job = fp.roleTitle || "Warehouse Associate";
-    const company = fp.company || "the employer";
+    const job =
+      fp.roleTitle ||
+      "Warehouse Associate";
+
+    const company =
+      fp.company ||
+      "the employer";
 
     return {
       toCandidate: [
         `Hey ${c.first}, I found a warehouse opening that may fit your experience.`,
-        `${company} is hiring for ${job}. Pay: ${pay}.${fp.setup ? ` Shift/location: ${fp.setup}.` : ""}`,
+
+        `${company} is hiring for ${job}. Pay: ${pay}.${
+          fp.setup
+            ? ` Shift/location: ${fp.setup}.`
+            : ""
+        }`,
+
         `Here's why it may fit: ${why}.`,
+
         "Would you like me to introduce you to the hiring manager?",
       ],
 
       toFounder: [
         `Hi ${f.first}, I found a worker interested in your ${job} opening.`,
-        c.blurb ?? workerLine(c),
+
+        c.blurb ??
+          workerLine(c),
+
         `Would you like me to connect you with ${c.first}?`,
       ],
 
       groupIntro: [
         `WarehouseJobz AI is connecting ${c.first} and ${f.first}.`,
+
         `${c.first}, meet ${f.first} from ${company}.`,
-        `Position: ${job}. Pay: ${pay}.${fp.setup ? ` Shift/location: ${fp.setup}.` : ""}`,
+
+        `Position: ${job}. Pay: ${pay}.${
+          fp.setup
+            ? ` Shift/location: ${fp.setup}.`
+            : ""
+        }`,
+
         workerLine(c),
+
         `You both agreed to connect. ${f.first}, please confirm the next hiring step and any interview or onboarding requirements.`,
       ],
     };
@@ -810,13 +993,17 @@ Keep messages short.`,
 
       return [
         `${fp.company} is hiring for ${fp.roleTitle}.`,
+
         `Pay: ${employerHourlyPay(other)}.`,
+
         fp.setup
           ? `Shift/location: ${fp.setup}.`
           : "",
+
         fp.mustHaves.length
           ? `Requirements: ${fp.mustHaves.join(", ")}.`
           : "",
+
         "Would you like an introduction?",
       ]
         .filter(Boolean)
@@ -827,12 +1014,17 @@ Keep messages short.`,
 
     return [
       `${other.first} is interested in warehouse work.`,
+
       cp.years
         ? `${cp.years} years of experience.`
         : "",
+
       cp.skills.length
-        ? `Skills: ${cp.skills.slice(0, 5).join(", ")}.`
+        ? `Skills: ${cp.skills
+            .slice(0, 5)
+            .join(", ")}.`
         : "",
+
       "Would you like an introduction?",
     ]
       .filter(Boolean)
@@ -844,7 +1036,10 @@ Keep messages short.`,
   // ---------------------------------------------
 
   async gate(
-    history: { who: string; text: string }[],
+    history: {
+      who: string;
+      text: string;
+    }[],
     sender: string,
     text: string,
     offeredSlots: string[]
@@ -874,23 +1069,40 @@ Respond only when:
 Ignore normal conversations between the
 worker and hiring manager.
 
-Do not confirm employment or shift booking.`,
-      transcript([
-        ...history.slice(-12),
-        {
-          who: `${sender} (latest)`,
-          text,
-        },
-      ]),
+Do not confirm employment or shift booking.
+
+Only return an agreedSlot when it exactly
+matches one of the offered times.`,
+      JSON.stringify({
+        offeredSlots,
+        conversation: transcript([
+          ...history.slice(-12),
+          {
+            who: `${sender} (latest)`,
+            text,
+          },
+        ]),
+      }),
       "low"
     );
 
+    const modelSlot =
+      out?.agreedSlot &&
+      offeredSlots.includes(out.agreedSlot)
+        ? out.agreedSlot
+        : null;
+
     if (out) {
       return {
-        action: out.agreedSlot
-          ? ("respond" as const)
-          : out.action,
-        slot: out.agreedSlot ?? ruleSlot ?? null,
+        action:
+          modelSlot || ruleSlot
+            ? ("respond" as const)
+            : out.action,
+
+        slot:
+          modelSlot ??
+          ruleSlot ??
+          null,
       };
     }
 
@@ -911,6 +1123,7 @@ Do not confirm employment or shift booking.`,
         )
           ? ("react" as const)
           : ("respond" as const),
+
         slot: null,
       };
     }
@@ -921,8 +1134,15 @@ Do not confirm employment or shift booking.`,
     };
   }
 
+  // ---------------------------------------------
+  // GROUP CHAT REPLIES
+  // ---------------------------------------------
+
   async groupReply(
-    history: { who: string; text: string }[],
+    history: {
+      who: string;
+      text: string;
+    }[],
     context: object
   ): Promise<string> {
     const out = await this.ask(
@@ -966,7 +1186,10 @@ Keep the response to one or two sentences.`,
 
   async chat(
     p: Person,
-    history: { who: string; text: string }[],
+    history: {
+      who: string;
+      text: string;
+    }[],
     status: string
   ): Promise<string> {
     const out = await this.ask(
@@ -990,12 +1213,15 @@ Keep replies short and conversational.`,
       JSON.stringify({
         person: {
           name: p.name,
+
           role:
             p.role === "founder"
               ? "warehouse employer"
               : "warehouse worker",
         },
+
         status,
+
         chat: transcript(
           history.slice(-10)
         ),
